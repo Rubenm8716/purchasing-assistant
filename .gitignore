@@ -1,0 +1,23 @@
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+
+# macOS
+.DS_Store
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
