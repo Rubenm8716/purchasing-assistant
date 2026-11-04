@@ -13,21 +13,20 @@ app.add_middleware(
 )
 
 
-class PurchaseRequest(BaseModel):
+class ChatRequest(BaseModel):
     message: str
 
 
 @app.get("/health")
 def health_check():
-    return {
-        "status": "ok",
-        "message": "Purchasing Assistant API is running"
-    }
+    return {"status": "ok"}
 
 
-@app.post("/purchase")
-def create_purchase(request: PurchaseRequest):
+@app.post("/chat")
+def chat(request: ChatRequest):
     return {
-        "status": "received",
-        "response": f"Your purchase request was received: {request.message}"
+        "response": (
+            f"I received your message: '{request.message}'. "
+            "This is a temporary response from the Purchasing Assistant."
+        )
     }
