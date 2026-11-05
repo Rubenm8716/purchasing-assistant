@@ -1,18 +1,30 @@
 
 "use client";
 
+// import { useState, useRef, useEffect, type FormEvent } from "react";
 import { useState, useRef, useEffect, type FormEvent } from "react";
+
+type Attachment = {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+};
 
 type Message = {
   id: number;
   role: "user" | "assistant";
   content: string;
+  attachments?: Attachment[];
 };
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const nextId = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -21,35 +33,154 @@ export default function Home() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(e.target.files ?? []);
+    setAttachments((prev) => [...prev, ...selectedFiles]);
+    e.target.value = "";
+  }
+
+function removeAttachment(index: number) {
+  setAttachments((prev) => prev.filter((_, i) => i !== index));
+}
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     const text = input.trim();
 
-    if (!text || loading) return;
+    //if (!text || loading) return;
+    if ((!text && attachments.length === 0) || loading) return;
+
+
+    const selectedFiles = [...attachments];
+
+    /*const userMessage: Message = {
+      id: nextId.current++,
+      role: "user",
+      content: text,
+    };*/
 
     const userMessage: Message = {
       id: nextId.current++,
       role: "user",
       content: text,
+      // attachments: selectedFiles.map((file) => ({
+      //attachments: attachments.map((file) => ({
+      attachments: selectedFiles.map((file) => ({
+        id: crypto.randomUUID(), 
+        name: file.name, 
+        size: file.size, 
+        type: file.type,
+      })),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
+    setAttachments([]);
     setLoading(true);
 
+
+
+
+
+
+
+
+
+
+
     try {
-      const response = await fetch("http://127.0.0.1:8000/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ message: text }),
-      });
+
+
+
+
+
+
+
+
+
+      // const response = await fetch("http://127.0.0.1:8000/chat", {
+      //  method: "POST",
+      //  headers: {
+      //    "Content-Type": "application/json",
+      //  },
+
+      //body: JSON.stringify({messages: [...messages, userMessage].map(({ role, content }) => ({role, content,})),}),});
+      //  body: JSON.stringify({
+      //  messages: [...messages, userMessage].map((message) => ({
+      //  role: message.role,
+      //  content:
+      //  message.content ||
+      //  (message.attachments?.length
+      //    ? `[Attached ${message.attachments.length} file(s) — not uploaded]`
+      //    : ""),
+      //      })),
+      //    }),
+      //  });
+
+
+
+        // Create the multipart request body
+        const formData = new FormData();
+
+        // Prepare conversation history
+        const conversation = [...messages, userMessage].map((message) => ({
+          role: message.role,
+          content:
+            message.content ||
+            (message.attachments?.length
+              ? `[Attached ${message.attachments.length} file(s)]`
+              : ""),
+        }));
+
+        // Add the conversation history as JSON text
+        formData.append(
+          "messages",
+          JSON.stringify({ messages: conversation })
+        );
+
+        // Add actual file bytes
+        selectedFiles.forEach((file) => {
+          formData.append("receipts", file);
+        });
+
+        // Send request to FastAPI
+        const response = await fetch("http://127.0.0.1:8000/chat", {
+          method: "POST",
+          body: formData,
+        });
+
+
+
+
+
+
+
+
+
+
+
+
+      // if (!response.ok) {
+      //  throw new Error(`Server returned ${response.status}`);
+      //}
 
       if (!response.ok) {
-        throw new Error("Failed to get response");
-      }
+        const errorData = await response.json();
+
+        throw new Error(
+          typeof errorData.detail === "string"
+            ? errorData.detail
+            : `Server returned ${response.status}`
+        );
+      }      
+
+
+
+
+
+
+
 
       const data = await response.json();
 
@@ -68,7 +199,13 @@ export default function Home() {
         {
           id: nextId.current++,
           role: "assistant",
-          content: "Sorry, I couldn't connect to the server.",
+          // content: "Sorry, I couldn't connect to the server.",
+          content:
+            error instanceof Error
+              ? error.message
+              : "Something went wrong.",
+
+          
         },
       ]);
     } finally {
@@ -115,7 +252,25 @@ export default function Home() {
                     : "bg-zinc-800 text-zinc-100"
                 }`}
               >
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                <div className="space-y-2">
+                {message.content && (
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                )}
+
+                {message.attachments?.map((attachment) => (
+                  <div
+                    key={attachment.id}
+                    className="rounded-lg border border-white/20 px-3 py-2 text-sm"
+                  >
+                    📎 {attachment.name}
+                    <span className="ml-2 text-xs opacity-60">
+                      {(attachment.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+
               </div>
             </div>
           ))}
@@ -132,13 +287,57 @@ export default function Home() {
         </div>
 
         <form onSubmit={handleSubmit} className="border-t border-zinc-800 py-5">
+
+          {attachments.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {attachments.map((file, index) => (
+                <div
+                  key={`${file.name}-${index}`}
+                  className="flex items-center gap-2 rounded-lg bg-zinc-800 px-3 py-2 text-sm"
+                >
+                  <span>📎 {file.name}</span>
+
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(index)}
+                    className="text-zinc-400 hover:text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-end gap-3 rounded-xl border border-zinc-700 bg-zinc-900 p-3">
+            
+
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,.webp"
+              onChange={handleFilesSelected}
+              className="hidden"
+            />
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-lg p-3 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+              title="Attach files"
+            >
+              📎
+            </button>
+
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask about a purchase..."
               rows={2}
-              className="max-h-40 min-h-12 flex-1 resize-none bg-transparent p-2 text-white outline-none"
+              //className="max-h-40 min-h-12 flex-1 resize-none bg-transparent p-2 text-white outline-none"
+              className="min-w-0 max-h-40 min-h-12 flex-1 resize-none bg-transparent p-2 text-white outline-none"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
@@ -149,7 +348,7 @@ export default function Home() {
 
             <button
               type="submit"
-              disabled={loading || !input.trim()}
+              disabled={loading || (!input.trim() && attachments.length === 0)}
               className="rounded-lg bg-white px-5 py-3 font-medium text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Send
