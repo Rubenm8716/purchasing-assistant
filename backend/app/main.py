@@ -8,7 +8,11 @@ from PIL import Image, UnidentifiedImageError
 from io import BytesIO
 from pathlib import Path
 
+from app.auth import router as auth_router
+
 app = FastAPI(title="Purchasing Assistant API")
+
+app.include_router(auth_router)
 
 app.add_middleware(
     CORSMiddleware,

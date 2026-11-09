@@ -11,6 +11,8 @@ type Attachment = {
   type: string;
 };
 
+// GoodPassword111
+
 type Message = {
   id: number;
   role: "user" | "assistant";
