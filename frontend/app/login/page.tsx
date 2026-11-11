@@ -42,7 +42,7 @@ export default function LoginPage() {
       const data = await response.json();
 
       // Update the shared authentication state.
-      await refreshUser();
+      await refreshUser();      
 
       // Redirect based on password-change requirements.
       if (data.user.must_change_password) {
@@ -50,8 +50,8 @@ export default function LoginPage() {
       } else {
         window.location.href = "/";
       }
-    } catch {
-      console.error("Login failed:", error);
+    } catch(err) {
+      console.error("Login failed:", err);
       setError("Unable to complete login. Please try again.");
     } finally {
       setLoading(false);
