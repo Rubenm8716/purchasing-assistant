@@ -4,6 +4,9 @@
 // import { useState, useRef, useEffect, type FormEvent } from "react";
 import { useState, useRef, useEffect, type FormEvent } from "react";
 
+import { useAuth } from "../context/AuthContext";
+import { useRouter } from "next/navigation";
+
 type Attachment = {
   id: string;
   name: string;
@@ -21,10 +24,24 @@ type Message = {
 };
 
 export default function Home() {
+
+  const { user, loading: authLoading, logout } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!user) {
+      router.replace("/login");
+    } else if (user.must_change_password) {
+    router.replace("/change-password");
+    }
+  }, [authLoading, user, router]);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  
+
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -69,9 +86,9 @@ function removeAttachment(index: number) {
       // attachments: selectedFiles.map((file) => ({
       //attachments: attachments.map((file) => ({
       attachments: selectedFiles.map((file) => ({
-        id: crypto.randomUUID(), 
-        name: file.name, 
-        size: file.size, 
+        id: crypto.randomUUID(),
+        name: file.name,
+        size: file.size,
         type: file.type,
       })),
     };
@@ -147,8 +164,10 @@ function removeAttachment(index: number) {
         });
 
         // Send request to FastAPI
-        const response = await fetch("http://127.0.0.1:8000/chat", {
+        //const response = await fetch("http://127.0.0.1:8000/chat", {
+        const response = await fetch("http://localhost:8000/chat", {
           method: "POST",
+          credentials: "include",
           body: formData,
         });
 
@@ -175,7 +194,7 @@ function removeAttachment(index: number) {
             ? errorData.detail
             : `Server returned ${response.status}`
         );
-      }      
+      }
 
 
 
@@ -207,7 +226,7 @@ function removeAttachment(index: number) {
               ? error.message
               : "Something went wrong.",
 
-          
+
         },
       ]);
     } finally {
@@ -215,153 +234,189 @@ function removeAttachment(index: number) {
     }
   }
 
-  return (
-    <main className="flex h-screen flex-col bg-zinc-950 text-white">
-      <header className="border-b border-zinc-800 px-6 py-5">
-        <h1 className="text-xl font-semibold">Purchasing Assistant</h1>
-        <p className="text-sm text-zinc-400">
-          Company Purchasing Management
-        </p>
-      </header>
+  async function handleLogout() {
+    try {
+      await logout();
+      router.replace("/login");
+    } catch (error) {
+      console.error("Logout failed:", error);
+      alert("Unable to log out. Please try again.");
+    }
+  }
 
-      <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden px-4">
-        <div className="flex-1 space-y-5 overflow-y-auto py-8">
-          {messages.length === 0 && (
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <h2 className="mb-3 text-3xl font-semibold">
-                What would you like to purchase?
-              </h2>
-              <p className="text-zinc-400">
-                Ask about company purchases, spending policies,
-                and approval requirements.
-              </p>
+  if (authLoading || !user || user.must_change_password) {
+      return (
+      <main className="flex h-screen items-center justify-center bg-zinc-950 text-white">
+        <p>Checking authentication...</p>
+      </main>
+    );
+  }
+      return (
+        <main className="flex h-screen flex-col bg-zinc-950 text-white">
+
+
+
+
+          <header className="flex items-center justify-between border-b border-zinc-800 px-6 py-5">
+            <div>
+            <h1 className="text-xl font-semibold">Purchasing Assistant</h1>
+            <p className="text-sm text-zinc-400">
+              Company Purchasing Management
+            </p>
             </div>
-          )}
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-zinc-400">
+                {user.name}
+              </span>
 
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${
-                message.role === "user"
-                  ? "justify-end"
-                  : "justify-start"
-              }`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                  message.role === "user"
-                    ? "bg-blue-600 text-white"
-                    : "bg-zinc-800 text-zinc-100"
-                }`}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-lg border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-800"
               >
-                <div className="space-y-2">
-                {message.content && (
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                )}
-
-                {message.attachments?.map((attachment) => (
-                  <div
-                    key={attachment.id}
-                    className="rounded-lg border border-white/20 px-3 py-2 text-sm"
-                  >
-                    📎 {attachment.name}
-                    <span className="ml-2 text-xs opacity-60">
-                      {(attachment.size / 1024).toFixed(1)} KB
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-
-              </div>
+                Logout
+              </button>
             </div>
-          ))}
+          </header>
 
-          {loading && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl bg-zinc-800 px-4 py-3 text-zinc-400">
-                Assistant is typing...
-              </div>
-            </div>
-          )}
+          <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden px-4">
+            <div className="flex-1 space-y-5 overflow-y-auto py-8">
+              {messages.length === 0 && (
+                <div className="flex h-full flex-col items-center justify-center text-center">
+                  <h2 className="mb-3 text-3xl font-semibold">
+                    What would you like to purchase?
+                  </h2>
+                  <p className="text-zinc-400">
+                    Ask about company purchases, spending policies,
+                    and approval requirements.
+                  </p>
+                </div>
+              )}
 
-          <div ref={bottomRef} />
-        </div>
-
-        <form onSubmit={handleSubmit} className="border-t border-zinc-800 py-5">
-
-          {attachments.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
-              {attachments.map((file, index) => (
+              {messages.map((message) => (
                 <div
-                  key={`${file.name}-${index}`}
-                  className="flex items-center gap-2 rounded-lg bg-zinc-800 px-3 py-2 text-sm"
+                  key={message.id}
+                  className={`flex ${
+                    message.role === "user"
+                      ? "justify-end"
+                      : "justify-start"
+                  }`}
                 >
-                  <span>📎 {file.name}</span>
-
-                  <button
-                    type="button"
-                    onClick={() => removeAttachment(index)}
-                    className="text-zinc-400 hover:text-white"
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                      message.role === "user"
+                        ? "bg-blue-600 text-white"
+                        : "bg-zinc-800 text-zinc-100"
+                    }`}
                   >
-                    ✕
-                  </button>
+                    <div className="space-y-2">
+                    {message.content && (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    )}
+
+                    {message.attachments?.map((attachment) => (
+                      <div
+                        key={attachment.id}
+                        className="rounded-lg border border-white/20 px-3 py-2 text-sm"
+                      >
+                        📎 {attachment.name}
+                        <span className="ml-2 text-xs opacity-60">
+                          {(attachment.size / 1024).toFixed(1)} KB
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+
+                  </div>
                 </div>
               ))}
+
+              {loading && (
+                <div className="flex justify-start">
+                  <div className="rounded-2xl bg-zinc-800 px-4 py-3 text-zinc-400">
+                    Assistant is typing...
+                  </div>
+                </div>
+              )}
+
+              <div ref={bottomRef} />
             </div>
-          )}
 
-          <div className="flex items-end gap-3 rounded-xl border border-zinc-700 bg-zinc-900 p-3">
-            
+            <form onSubmit={handleSubmit} className="border-t border-zinc-800 py-5">
+
+              {attachments.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {attachments.map((file, index) => (
+                    <div
+                      key={`${file.name}-${index}`}
+                      className="flex items-center gap-2 rounded-lg bg-zinc-800 px-3 py-2 text-sm"
+                    >
+                      <span>📎 {file.name}</span>
+
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(index)}
+                        className="text-zinc-400 hover:text-white"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-end gap-3 rounded-xl border border-zinc-700 bg-zinc-900 p-3">
 
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".pdf,.png,.jpg,.jpeg,.webp"
-              onChange={handleFilesSelected}
-              className="hidden"
-            />
 
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded-lg p-3 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-              title="Attach files"
-            >
-              📎
-            </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.png,.jpg,.jpeg,.webp"
+                  onChange={handleFilesSelected}
+                  className="hidden"
+                />
 
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about a purchase..."
-              rows={2}
-              //className="max-h-40 min-h-12 flex-1 resize-none bg-transparent p-2 text-white outline-none"
-              className="min-w-0 max-h-40 min-h-12 flex-1 resize-none bg-transparent p-2 text-white outline-none"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  e.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-lg p-3 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                  title="Attach files"
+                >
+                  📎
+                </button>
 
-            <button
-              type="submit"
-              disabled={loading || (!input.trim() && attachments.length === 0)}
-              className="rounded-lg bg-white px-5 py-3 font-medium text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Send
-            </button>
-          </div>
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask about a purchase..."
+                  rows={2}
+                  //className="max-h-40 min-h-12 flex-1 resize-none bg-transparent p-2 text-white outline-none"
+                  className="min-w-0 max-h-40 min-h-12 flex-1 resize-none bg-transparent p-2 text-white outline-none"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                />
 
-          <p className="mt-3 text-center text-xs text-zinc-500">
-            This is only the demo.
-          </p>
-        </form>
-      </section>
-    </main>
-  );
-}
+                <button
+                  type="submit"
+                  disabled={loading || (!input.trim() && attachments.length === 0)}
+                  className="rounded-lg bg-white px-5 py-3 font-medium text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </div>
+
+              <p className="mt-3 text-center text-xs text-zinc-500">
+                This is only the demo.
+              </p>
+            </form>
+          </section>
+        </main>
+      );
+    }

@@ -1,5 +1,6 @@
 
-from fastapi import FastAPI, Form, File, UploadFile
+
+from fastapi import FastAPI, Form, File, UploadFile, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -8,15 +9,24 @@ from PIL import Image, UnidentifiedImageError
 from io import BytesIO
 from pathlib import Path
 
-from app.auth import router as auth_router
+from app.auth import router as auth_router, get_current_user
+
+#from fastapi import Depends
+from app.permissions import require_role
+
+from app.admin import router as admin_router
+
+from app.permissions import require_password_changed
 
 app = FastAPI(title="Purchasing Assistant API")
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
@@ -114,10 +124,15 @@ async def validate_receipt(file: UploadFile):
 @app.post("/chat")
 async def chat(
     messages: str = Form(...),
-    receipts: list[UploadFile] | None = File(None)
+    receipts: list[UploadFile] | None = File(None),
+    #current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_password_changed)
 ):
     # Convert the JSON string into validated messages
-    request = ChatRequest.model_validate_json(messages)
+    #request = ChatRequest.model_validate_json(messages)
+    request = ChatRequest.model_validate_json(
+    '{"messages":' + messages + '}'
+)
     messages = request.messages
     if not messages:
         return{"response": "Please send a message."}
@@ -155,3 +170,26 @@ async def chat(
             f"in our conversation"
         )
     return {"response": response}
+
+
+# Test Functions
+@app.get("/test/admin")
+def test_admin(
+    user: dict = Depends(require_role("admin"))
+):
+    return {
+        "message": "Admin access granted",
+        "user": user["name"],
+        "role": user["role"]
+    }
+
+
+@app.get("/test/manager")
+def test_manager(
+    user: dict = Depends(require_role("manager", "admin"))
+):
+    return {
+        "message": "Manager access granted",
+        "user": user["name"],
+        "role": user["role"]
+    }

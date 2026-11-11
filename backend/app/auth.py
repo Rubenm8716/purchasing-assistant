@@ -3,11 +3,11 @@ import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Response, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Response, Request, Depends
+from pydantic import BaseModel, Field
 
 from app.database import get_connection
-from app.security import verify_password
+from app.security import verify_password, hash_password
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -18,6 +18,12 @@ COOKIE_NAME = "session_token"
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=12, max_length=128)
+
 
 
 @router.post("/login")
@@ -120,8 +126,8 @@ def login(data: LoginRequest, response: Response):
 #        "message": "Session cookie received"
 #    }
 
-
-@router.get("/me")
+# Remove endpoint so we can use get_current function elsewhere
+#@router.get("/me")
 def get_current_user(request: Request):
     session_token = request.cookies.get(COOKIE_NAME)
 
@@ -169,3 +175,142 @@ def get_current_user(request: Request):
         "must_change_password": must_change_password
     }
 
+@router.get("/me")
+def me(user: dict = Depends(get_current_user)):
+    return user
+
+# Log out process
+@router.post("/logout")
+def logout(request: Request, response: Response):
+    session_token = request.cookies.get(COOKIE_NAME)
+
+    if session_token:
+        token_hash = hashlib.sha256(
+            session_token.encode("utf-8")
+        ).hexdigest()
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE sessions
+                    SET revoked_at = NOW()
+                    WHERE token_hash = %s
+                      AND revoked_at IS NULL
+                    """,
+                    (token_hash,)
+                )
+
+    response.delete_cookie(
+        key=COOKIE_NAME,
+        path="/"
+    )
+
+    return {
+        "message": "Logged out successfully"
+    }
+
+
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePasswordRequest,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = current_user["id"]
+
+    # 1. Retrieve the user's existing password hash
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT password_hash
+                FROM users
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (user_id,)
+            )
+
+            result = cur.fetchone()
+
+            if result is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="User not found"
+                )
+
+            stored_hash = result[0]
+
+            # 2. Verify their current password
+            if not verify_password(
+                data.current_password,
+                stored_hash
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Current password is incorrect"
+                )
+
+            # 3. Prevent reusing the same password
+            if data.current_password == data.new_password:
+                raise HTTPException(
+                    status_code=400,
+                    detail="New password must be different"
+                )
+
+            # 4. Hash the new password
+            new_hash = hash_password(data.new_password)
+
+            # 5. Update PostgreSQL
+            cur.execute(
+                """
+                UPDATE users
+                SET password_hash = %s,
+                    must_change_password = FALSE
+                WHERE id = %s
+                """,
+                (new_hash, user_id)
+            )
+
+            # 6. Identify the current session
+            session_token = request.cookies.get(COOKIE_NAME)
+
+            current_token_hash = hashlib.sha256(
+                session_token.encode("utf-8")
+            ).hexdigest()
+
+            # 7. Revoke all other active sessions
+            cur.execute(
+                """
+                UPDATE sessions
+                SET revoked_at = NOW()
+                WHERE user_id = %s
+                AND revoked_at IS NULL
+                AND token_hash <> %s
+                """,
+                (user_id, current_token_hash)
+            )
+
+    return {
+        "message": "Password changed successfully",
+        "must_change_password": False
+    }
+
+
+#{
+#  "email": "manager1@example.com",
+#  "password": "ManagerDemo123!"
+#  "new password": "Lovecookies@8716"
+#}
+
+
+
+#{
+#  "current_password": "Lovecookies@8716",
+#  "new_password": "Lovecookies@716"
+#}
+
+#employee1@example.com
+#DemoPassword123! -> Lovecookies@8716
