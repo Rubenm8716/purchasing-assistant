@@ -155,7 +155,8 @@ function removeAttachment(index: number) {
         // Add the conversation history as JSON text
         formData.append(
           "messages",
-          JSON.stringify({ messages: conversation })
+          //JSON.stringify({ messages: conversation })
+          JSON.stringify(conversation)
         );
 
         // Add actual file bytes
