@@ -4,6 +4,8 @@ import "./globals.css";
 
 import { AuthProvider } from "../context/AuthContext";
 
+import Navbar from "../components/navbar";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -27,7 +29,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>
+          <Navbar />
+          <main className="min-w-0 flex-1 md:ml-60">
           {children}
+          </main>
         </AuthProvider>
       </body>
     </html>

@@ -21,3 +21,6 @@ out/
 .terraform/
 *.tfstate
 *.tfstate.*
+
+# Locally uploaded purchase receipts and photos
+/backend/uploads/

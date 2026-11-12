@@ -18,10 +18,15 @@ from app.admin import router as admin_router
 
 from app.permissions import require_password_changed
 
+from app.purchases import router as purchases_router
+
+
+
 app = FastAPI(title="Purchasing Assistant API")
 
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(purchases_router)
 
 app.add_middleware(
     CORSMiddleware,
