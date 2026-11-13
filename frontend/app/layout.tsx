@@ -6,6 +6,8 @@ import { AuthProvider } from "../context/AuthContext";
 
 import Navbar from "../components/navbar";
 
+import { Suspense } from "react";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -29,7 +31,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>
+          
+          <Suspense fallback={null}>
           <Navbar />
+          </Suspense>
+
           <main className="min-w-0 flex-1 md:ml-60">
           {children}
           </main>

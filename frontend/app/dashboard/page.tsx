@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../context/AuthContext";
 
+import Link from "next/link";
+
 type Purchase = {
   id: string;
   job_name: string;
@@ -181,14 +183,18 @@ export default function DashboardPage() {
                     ].filter(Boolean).join(", ");
 
                     return (
-                      <tr
+                        <tr
                         key={purchase.id}
-                        className="border-t border-gray-800"
-                      >
+                        onClick={() => router.push(`/purchases/${purchase.id}`)}
+                        className="border-t border-gray-800 hover:bg-zinc-900 transition-colors cursor-pointer"
+                        >
+
                         <td className="p-4">{purchase.job_name}</td>
+
                         <td className="p-4">
-                          {purchase.item_description}
+                            {purchase.item_description}
                         </td>
+
                         <td className="p-4">
                           ${Number(purchase.amount).toFixed(2)}
                         </td>

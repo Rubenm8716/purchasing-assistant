@@ -109,11 +109,20 @@ export default function PurchasesPage() {
 
       {!loadingPurchases && !error && purchases.length > 0 && (
         <div className="mt-8 space-y-4">
-          {purchases.map((purchase) => (
-            <div
-              key={purchase.id}
-              className="rounded-lg border border-gray-700 p-5"
-            >
+            {purchases.map((purchase) => (
+              <div
+                key={purchase.id}
+                onClick={() => {
+                  if (user.role === "admin" || user.role === "manager") {
+                    router.push(`/purchases/${purchase.id}`);
+                  }
+                }}
+                className={`rounded-lg border border-gray-700 p-5 ${
+                  user.role === "admin" || user.role === "manager"
+                    ? "cursor-pointer transition-colors hover:bg-gray-900"
+                    : ""
+                }`}
+              >
               <div className="flex justify-between gap-4">
                 <h2 className="font-semibold">
                   {purchase.item_description}
