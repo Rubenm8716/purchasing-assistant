@@ -18,6 +18,13 @@ export default function Navbar() {
     { href: "/", label: "Chat" },
     { href: "/purchases/new", label: "New Purchase" },
     { href: "/purchases", label: "Purchase History" },
+
+    ...(
+        user.role === "admin" || user.role === "manager"
+        ? [{ href: "/dashboard", label: "Dashboard" }]
+        : []
+    ),
+
   ];
 
   async function handleLogout() {
