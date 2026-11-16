@@ -13,6 +13,7 @@ type Purchase = {
   reason: string;
   amount: number;
   status: string;
+  review_status: string;
   recommendation: string;
   source: "chat" | "form";
   after_the_fact: boolean;
@@ -150,6 +151,11 @@ function PurchaseDetailsContent() {
   const [purchase, setPurchase] = useState<Purchase | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [selectedReviewStatus, setSelectedReviewStatus] = useState("");
+  const [reviewReason, setReviewReason] = useState("");
+  const [savingReview, setSavingReview] = useState(false);
+  const [reviewSaveError, setReviewSaveError] = useState("");  
 
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [evidenceLoading, setEvidenceLoading] = useState(true);
@@ -416,6 +422,60 @@ useEffect(() => {
   }, [authLoading, user, canView, params.purchaseId]);
 
 
+async function handleSaveReview() {
+  if (!purchase || savingReview) return;
+
+  const review_status = selectedReviewStatus || purchase.review_status;
+  const reason = reviewReason.trim();
+
+  if (!reason || review_status === purchase.review_status) return;
+
+  setSavingReview(true);
+  setReviewSaveError("");
+
+  try {
+    const response = await fetch(
+      `http://localhost:8000/purchases/${params.purchaseId}/review-status`,
+      {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ review_status, reason }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Unable to update review status (${response.status})`);
+    }
+
+    setPurchase((previous) =>
+      previous ? { ...previous, review_status } : previous
+    );
+
+    setSelectedReviewStatus("");
+    setReviewReason("");
+
+    const historyResponse = await fetch(
+      `http://localhost:8000/purchases/${params.purchaseId}/review-history`,
+      { credentials: "include" }
+    );
+
+    if (!historyResponse.ok) {
+      throw new Error("Status saved, but unable to refresh review history.");
+    }
+
+    const updatedHistory: ReviewHistory[] = await historyResponse.json();
+    setReviewHistory(updatedHistory);
+  } catch (err) {
+    setReviewSaveError(
+      err instanceof Error ? err.message : "Unable to save review status."
+    );
+  } finally {
+    setSavingReview(false);
+  }
+}
 
   async function handleSaveNote() {
     const content = newNote.trim();
@@ -526,7 +586,78 @@ useEffect(() => {
               </p>
             </div>
           </div>
+          <div className="mt-4 rounded-xl border border-gray-800 p-5">
+            <p className="text-sm text-gray-400">Review Status</p>
 
+            <p className="mt-2 text-xl font-semibold capitalize">
+              {purchase.review_status.replaceAll("_", " ")}
+            </p>
+
+            <div className="mt-5">
+              <label
+                htmlFor="review-status"
+                className="mb-2 block text-sm text-gray-400"
+              >
+                Change Review Status
+              </label>
+
+              <select
+                id="review-status"
+                value={selectedReviewStatus || purchase.review_status}
+                onChange={(e) => setSelectedReviewStatus(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white"
+              >
+                <option value="not_required">Not Required</option>
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="resolved">Resolved</option>
+
+                </select>
+
+                {/* Reason for changing the review status */}
+                <div className="mt-4">
+                  <label
+                    htmlFor="review-reason"
+                    className="mb-2 block text-sm text-gray-400"
+                  >
+                    Reason for Status Change
+                  </label>
+
+                  <textarea
+                    id="review-reason"
+                    value={reviewReason}
+                    onChange={(e) => setReviewReason(e.target.value)}
+                    placeholder="Explain why this review status is changing..."
+                    rows={3}
+                    maxLength={5000}
+                    className="w-full rounded-lg border border-gray-700 bg-transparent p-3 text-sm text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  {reviewSaveError && (
+                    <p role="alert" className="mt-3 text-sm text-red-400">
+                      {reviewSaveError}
+                    </p>
+                  )}
+                  {/* Save review status */}
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleSaveReview}
+                      disabled={
+                        savingReview ||
+                        !reviewReason.trim() ||
+                        (selectedReviewStatus || purchase.review_status) ===
+                          purchase.review_status
+                      }
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {savingReview ? "Saving..." : "Save Review Status"}
+                    </button>
+                  </div>
+
+                </div>
+              </div>
           <section className="mt-8 rounded-xl border border-gray-800 p-6">
             <h2 className="text-xl font-semibold">
               Purchase Information
