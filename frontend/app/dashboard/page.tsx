@@ -19,6 +19,7 @@ type Purchase = {
   missing_receipt: boolean;
   missing_item_photo: boolean;
   needs_review: boolean;
+  review_status: "not_required" | "pending" | "in_progress" | "resolved";
 };
 
 export default function DashboardPage() {
@@ -28,6 +29,12 @@ export default function DashboardPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [reviewFilter, setReviewFilter] = useState<
+  "all" | "pending" | "in_progress" | "resolved"
+  >("pending");  
+
+
+
 
   const canView =
     user?.role === "admin" || user?.role === "manager";
@@ -106,6 +113,15 @@ export default function DashboardPage() {
     (p) => p.needs_review
   );
 
+  const filteredPurchases = purchases.filter((p) => {
+    if (reviewFilter === "all") {
+       return true;
+    }
+
+    return p.review_status === reviewFilter;
+   });
+
+
   const missingEvidence = purchased.filter(
     (p) => p.missing_receipt || p.missing_item_photo
   );
@@ -154,14 +170,39 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+            <h2 className="mt-10 text-xl font-semibold">
+            Purchase Review Queue
+            </h2>
 
-          <h2 className="mt-10 text-xl font-semibold">
-            Purchases Requiring Review
-          </h2>
-
-          {needsReview.length === 0 ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+            {[
+                { label: "All", value: "all" },
+                { label: "Pending", value: "pending" },
+                { label: "In Progress", value: "in_progress" },
+                { label: "Resolved", value: "resolved" },
+            ].map((filter) => (
+                <button
+                key={filter.value}
+                type="button"
+                onClick={() =>
+                    setReviewFilter(
+                    filter.value as typeof reviewFilter
+                    )
+                }
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                    reviewFilter === filter.value
+                    ? "bg-blue-600 text-white"
+                    : "bg-zinc-900 text-gray-400 hover:bg-zinc-800"
+                }`}
+                >
+                {filter.label}
+                </button>
+            ))}
+            </div>
+          {/*{needsReview.length === 0 ? (*/}
+          {filteredPurchases.length === 0 ? (  
             <p className="mt-4 text-gray-400">
-              No purchases currently require review.
+              No purchases found for this review status.
             </p>
           ) : (
             <div className="mt-4 overflow-x-auto rounded-xl border border-gray-800">
@@ -171,11 +212,13 @@ export default function DashboardPage() {
                     <th className="p-4">Job</th>
                     <th className="p-4">Item</th>
                     <th className="p-4">Amount</th>
+                    <th className="p-4">Review Status</th>
                     <th className="p-4">Review Reason</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {needsReview.map((purchase) => {
+                  {/*{needsReview.map((purchase) => {*/}
+                  {filteredPurchases.map((purchase) => {
                     const reasons = [
                       purchase.after_the_fact && "After the fact",
                       purchase.missing_receipt && "Missing receipt",
@@ -196,11 +239,29 @@ export default function DashboardPage() {
                         </td>
 
                         <td className="p-4">
-                          ${Number(purchase.amount).toFixed(2)}
+                        ${Number(purchase.amount).toFixed(2)}
                         </td>
+
+                        <td className="p-4">
+                        <span
+                            className={`rounded-md px-2 py-1 text-xs font-medium ${
+                            purchase.review_status === "pending"
+                                ? "bg-amber-500/10 text-amber-400"
+                                : purchase.review_status === "in_progress"
+                                ? "bg-blue-500/10 text-blue-400"
+                                : purchase.review_status === "resolved"
+                                ? "bg-green-500/10 text-green-400"
+                                : "bg-gray-500/10 text-gray-400"
+                            }`}
+                        >
+                            {purchase.review_status.replaceAll("_", " ")}
+                        </span>
+                        </td>
+
                         <td className="p-4 text-amber-400">
-                          {reasons}
+                        {reasons}
                         </td>
+
                       </tr>
                     );
                   })}
