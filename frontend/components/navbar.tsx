@@ -21,7 +21,9 @@ export default function Navbar() {
 
     ...(
         user.role === "admin" || user.role === "manager"
-        ? [{ href: "/dashboard", label: "Dashboard" }]
+        ? [{ href: "/dashboard", label: "Dashboard" },
+           { href: "/employees", label: "Employees" },
+        ]
         : []
     ),
 
