@@ -110,7 +110,10 @@ export default function DashboardPage() {
   );
 
   const needsReview = purchases.filter(
-    (p) => p.needs_review
+    (p) => 
+        p.review_status == "pending" ||
+        p.review_status == "in_progress"
+
   );
 
   const filteredPurchases = purchases.filter((p) => {
