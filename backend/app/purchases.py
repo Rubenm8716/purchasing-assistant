@@ -67,7 +67,6 @@ class ReviewNoteCreate(BaseModel):
     content: str = Field(min_length=1, max_length=5000)
 
 
-
 class ReviewStatusUpdate(BaseModel):
     review_status: Literal[
         "pending",
@@ -76,6 +75,10 @@ class ReviewStatusUpdate(BaseModel):
     ]
     reason: str = Field(min_length=1, max_length=5000)
 
+
+class AccountingCheckUpdate(BaseModel):
+    status: Literal["pending", "passed", "failed"]
+    reason: str = Field(min_length=1, max_length=5000)
 
 
 class PurchaseComplete(BaseModel):
@@ -154,6 +157,26 @@ def create_purchase(
             )
 
             saved_purchase = cursor.fetchone()
+            # Create accounting checks for completed purchases
+            if saved_purchase["status"] == "purchased":
+                cursor.execute(
+                    """
+                    INSERT INTO purchase_accounting_checks (
+                        purchase_request_id,
+                        check_type
+                    )
+                    VALUES
+                        (%s, 'receipt'),
+                        (%s, 'item_photo'),
+                        (%s, 'bank_match')
+                    """,
+                    (
+                        saved_purchase["id"],
+                        saved_purchase["id"],
+                        saved_purchase["id"]
+                    )
+                )
+
 
     return saved_purchase
 
@@ -238,7 +261,24 @@ def complete_purchase(
             )
 
             completed_purchase = cursor.fetchone()
-
+            # Create accounting checks when a chat purchase is completed
+            cursor.execute(
+                """
+                INSERT INTO purchase_accounting_checks (
+                    purchase_request_id,
+                    check_type
+                )
+                VALUES
+                    (%s, 'receipt'),
+                    (%s, 'item_photo'),
+                    (%s, 'bank_match')
+                """,
+                (
+                    completed_purchase["id"],
+                    completed_purchase["id"],
+                    completed_purchase["id"]
+                )
+            )
     return completed_purchase
 
 
@@ -884,3 +924,318 @@ def list_review_history(
             history = cursor.fetchall()
 
     return history
+
+
+@router.patch("/{purchase_id}/accounting-checks/{check_type}")
+def update_accounting_check(
+    purchase_id: UUID,
+    check_type: Literal["receipt", "item_photo", "bank_match"],
+    data: AccountingCheckUpdate,
+    current_user: dict = Depends(
+        require_password_changed
+    )
+):
+    if current_user["role"] not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied."
+        )
+
+    reason = data.reason.strip()
+
+    if not reason:
+        raise HTTPException(
+            status_code=422,
+            detail="A reason is required."
+        )    
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, status, accounting_status
+                FROM purchase_requests
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (purchase_id,)
+            )
+
+            purchase = cursor.fetchone()
+
+            if purchase is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Purchase not found."
+                )
+
+            purchase_id_db, purchase_status, accounting_status = purchase
+
+            if purchase_status != "purchased":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only completed purchases can be verified."
+                )
+            # Retrieve the accounting check for this purchase
+            cursor.execute(
+                """
+                SELECT id, status
+                FROM purchase_accounting_checks
+                WHERE purchase_request_id = %s
+                AND check_type = %s
+                FOR UPDATE
+                """,
+                (purchase_id, check_type)
+            )
+
+            accounting_check = cursor.fetchone()
+
+            if accounting_check is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Accounting check not found."
+                )
+
+            check_id, current_check_status = accounting_check
+
+            old_status = current_check_status
+            new_status = data.status
+
+            if old_status == new_status:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Accounting check already has this status."
+                )
+
+            cursor.execute(
+                """
+                UPDATE purchase_accounting_checks
+                SET status = %s,
+                    verified_by = CASE
+                        WHEN %s = 'pending' THEN NULL
+                        ELSE %s::uuid
+                    END,
+                    verified_at = CASE
+                        WHEN %s = 'pending' THEN NULL
+                        ELSE NOW()
+                    END,
+                    notes = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                """,
+                (
+                    new_status,
+                    new_status,
+                    current_user["id"],
+                    new_status,
+                    reason,
+                    check_id
+                )
+            )
+
+            # Record the accounting status change in the audit history
+            cursor.execute(
+                """
+                INSERT INTO purchase_accounting_history (
+                    purchase_request_id,
+                    accounting_check_id,
+                    old_status,
+                    new_status,
+                    changed_by,
+                    reason
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    purchase_id,
+                    check_id,
+                    old_status,
+                    new_status,
+                    current_user["id"],
+                    reason
+                )
+            )
+            # Retrieve all accounting checks for this purchase
+            cursor.execute(
+                """
+                SELECT check_type, status
+                FROM purchase_accounting_checks
+                WHERE purchase_request_id = %s
+                """,
+                (purchase_id,)
+            )
+
+            checks = cursor.fetchall()
+
+            # Convert the results into a dictionary
+            check_statuses = {
+                check_type: status
+                for check_type, status in checks
+            }
+
+            # Make sure all three required accounting checks exist
+            required_checks = {"receipt", "item_photo", "bank_match"}
+
+            if set(check_statuses.keys()) != required_checks:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Purchase is missing required accounting checks."
+                )
+
+            # Calculate the overall accounting status
+            statuses = list(check_statuses.values())
+
+            if "failed" in statuses:
+                new_accounting_status = "exception"
+
+            elif all(status == "passed" for status in statuses):
+                new_accounting_status = "verified"
+
+            elif "passed" in statuses:
+                new_accounting_status = "partially_verified"
+
+            else:
+                new_accounting_status = "unverified"
+
+            # Save the overall accounting status
+            cursor.execute(
+                """
+                UPDATE purchase_requests
+                SET accounting_status = %s
+                WHERE id = %s
+                """,
+                (
+                    new_accounting_status,
+                    purchase_id
+                )
+            )
+    return {
+        "message": "Accounting check updated successfully.",
+        "purchase_id": str(purchase_id),
+        "check_id": str(check_id),
+        "check_type": check_type,
+        "old_check_status": old_status,
+        "new_check_status": new_status,
+        "accounting_status": new_accounting_status
+    }
+
+
+@router.get("/{purchase_id}/accounting-checks")
+def get_accounting_checks(
+    purchase_id: UUID,
+    current_user: dict = Depends(require_password_changed)
+):
+    if current_user["role"] not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied."
+        )
+
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, status, accounting_status
+                FROM purchase_requests
+                WHERE id = %s
+                """,
+                (purchase_id,)
+            )
+
+            purchase = cursor.fetchone()
+
+            if purchase is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Purchase not found."
+                )
+
+            purchase_id_db, purchase_status, accounting_status = purchase
+
+            cursor.execute(
+                """
+                SELECT
+                    check_type,
+                    status,
+                    verified_by,
+                    verified_at,
+                    notes
+                FROM purchase_accounting_checks
+                WHERE purchase_request_id = %s
+                ORDER BY check_type
+                """,
+                (purchase_id,)
+            )
+
+            checks = cursor.fetchall()
+
+    return {
+        "purchase_id": str(purchase_id),
+        "purchase_status": purchase_status,
+        "accounting_status": accounting_status,
+        "checks": [
+            {
+                "check_type": check_type,
+                "status": status,
+                "verified_by": str(verified_by) if verified_by else None,
+                "verified_at": verified_at,
+                "notes": notes
+            }
+            for check_type, status, verified_by, verified_at, notes in checks
+        ]
+    }
+
+@router.get("/{purchase_id}/accounting-history")
+def get_accounting_history(
+    purchase_id: UUID,
+    current_user: dict = Depends(require_password_changed)
+):
+    if current_user["role"] not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied."
+        )
+    with get_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+
+            # Verify the purchase exists
+            cursor.execute(
+                """
+                SELECT id
+                FROM purchase_requests
+                WHERE id = %s
+                """,
+                (purchase_id,)
+            )
+
+            if cursor.fetchone() is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Purchase not found."
+                )
+            # Retrieve the accounting verification history
+            cursor.execute(
+                """
+                SELECT
+                    h.id,
+                    c.check_type,
+                    h.old_status,
+                    h.new_status,
+                    h.reason,
+                    h.created_at,
+                    u.name AS changed_by_name
+                FROM purchase_accounting_history h
+                JOIN purchase_accounting_checks c
+                    ON h.accounting_check_id = c.id
+                JOIN users u
+                    ON h.changed_by = u.id
+                WHERE h.purchase_request_id = %s
+                ORDER BY h.created_at DESC, h.id DESC
+                """,
+                (purchase_id,)
+            )
+
+            history = cursor.fetchall()
+
+    return history
+    

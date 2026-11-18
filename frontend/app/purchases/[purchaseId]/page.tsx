@@ -25,7 +25,6 @@ type Purchase = {
   needs_review: boolean;
 };
 
-
 type Evidence = {
   id: string;
   evidence_type: "receipt" | "item_photo";
@@ -48,6 +47,24 @@ type ReviewHistory = {
   new_status: string;
   reason: string;
   changed_at: string;
+  changed_by_name: string;
+};
+
+type AccountingCheck = {
+  check_type: "receipt" | "item_photo" | "bank_match";
+  status: "pending" | "passed" | "failed";
+  verified_by: string | null;
+  verified_at: string | null;
+  notes: string | null;
+};
+
+type AccountingHistory = {
+  id: string;
+  check_type: string;
+  old_status: string;
+  new_status: string;
+  reason: string;
+  created_at: string;
   changed_by_name: string;
 };
 
@@ -168,6 +185,34 @@ function PurchaseDetailsContent() {
   const [reviewHistory, setReviewHistory] = useState<ReviewHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState("");
+
+
+  // Accounting verification
+  const [accountingStatus, setAccountingStatus] = useState("unverified");
+
+  const [accountingChecks, setAccountingChecks] = useState<AccountingCheck[]>([]);
+  const [accountingLoading, setAccountingLoading] = useState(true);
+  const [accountingError, setAccountingError] = useState("");
+
+
+  // Editing an accounting verification check
+  const [selectedAccountingCheck, setSelectedAccountingCheck] =
+    useState<AccountingCheck["check_type"] | null>(null);
+
+  const [selectedAccountingStatus, setSelectedAccountingStatus] =
+    useState<AccountingCheck["status"]>("pending");
+
+  const [accountingReason, setAccountingReason] = useState("");
+
+  const [savingAccounting, setSavingAccounting] = useState(false);
+
+  const [accountingSaveError, setAccountingSaveError] = useState("");
+
+
+  // Accounting audit history
+  const [accountingHistory, setAccountingHistory] = useState<AccountingHistory[]>([]);
+  const [accountingHistoryLoading, setAccountingHistoryLoading] = useState(true);
+  const [accountingHistoryError, setAccountingHistoryError] = useState("");
 
 
   const [newNote, setNewNote] = useState("");
@@ -307,9 +352,6 @@ useEffect(() => {
     };
   }, [authLoading, user, canView, params.purchaseId]);
 
-
-
-
   // Fetch review history
   useEffect(() => {
     if (
@@ -366,6 +408,167 @@ useEffect(() => {
     };
   }, [authLoading, user, canView, params.purchaseId]);  
 
+/*
+  async function fetchAccountingChecks(purchaseId: string) {
+    setAccountingLoading(true);
+    setAccountingError("");
+
+    try {
+      const response = await fetch(
+        `http://localhost:8000/purchases/${purchaseId}/accounting-checks`,
+        {
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to load accounting checks.");
+      }
+
+      const data = await response.json();
+
+      setAccountingStatus(data.accounting_status);
+      setAccountingChecks(data.checks);
+    } catch (error) {
+      setAccountingError(
+        error instanceof Error ? error.message : "Something went wrong."
+      );
+    } finally {
+      setAccountingLoading(false);
+    }
+  }
+
+  // Load accounting checks when the purchase page opens
+  useEffect(() => {
+    if (
+      authLoading ||
+      !user ||
+      !canView ||
+      user.must_change_password
+    ) {
+      return;
+    }
+
+    void fetchAccountingChecks(params.purchaseId);
+  }, [authLoading, user, canView, params.purchaseId]);
+*/
+
+//
+
+  // Fetch accounting verification checks
+  useEffect(() => {
+    if (
+      authLoading ||
+      !user ||
+      !canView ||
+      user.must_change_password
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadAccountingChecks() {
+      setAccountingLoading(true);
+      setAccountingError("");
+
+      try {
+        const response = await fetch(
+          `http://localhost:8000/purchases/${params.purchaseId}/accounting-checks`,
+          { credentials: "include" }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            `Unable to load accounting checks (${response.status})`
+          );
+        }
+
+        const data = await response.json();
+
+        if (!cancelled) {
+          setAccountingStatus(data.accounting_status);
+          setAccountingChecks(data.checks);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAccountingError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load accounting checks."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setAccountingLoading(false);
+        }
+      }
+    }
+
+    void loadAccountingChecks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user, canView, params.purchaseId]);
+
+
+
+  // Fetch accounting audit history
+  useEffect(() => {
+    if (
+      authLoading ||
+      !user ||
+      !canView ||
+      user.must_change_password
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadAccountingHistory() {
+      setAccountingHistoryLoading(true);
+      setAccountingHistoryError("");
+
+      try {
+        const response = await fetch(
+          `http://localhost:8000/purchases/${params.purchaseId}/accounting-history`,
+          { credentials: "include" }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            `Unable to load accounting history (${response.status})`
+          );
+        }
+
+        const data = await response.json();
+
+        if (!cancelled) {
+          setAccountingHistory(Array.isArray(data) ? data : Array.isArray(data.history) ? data.history : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAccountingHistoryError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load accounting history."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setAccountingHistoryLoading(false);
+        }
+      }
+    }
+
+    void loadAccountingHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user, canView, params.purchaseId]);
 
   // Fetch purchase information
   useEffect(() => {
@@ -421,6 +624,99 @@ useEffect(() => {
     };
   }, [authLoading, user, canView, params.purchaseId]);
 
+  //
+  async function handleSaveAccounting() {
+    if (!selectedAccountingCheck || savingAccounting) return;
+
+    const reason = accountingReason.trim();
+
+    const currentCheck = accountingChecks.find(
+      (check) => check.check_type === selectedAccountingCheck
+    );
+
+    if (
+      !reason ||
+      !currentCheck ||
+      selectedAccountingStatus === currentCheck.status
+    ) {
+      return;
+    }
+
+    setSavingAccounting(true);
+    setAccountingSaveError("");
+
+    try {
+      const response = await fetch(
+        `http://localhost:8000/purchases/${params.purchaseId}/accounting-checks/${selectedAccountingCheck}`,
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status: selectedAccountingStatus,
+            reason,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Unable to save accounting verification (${response.status})`
+        );
+      }
+
+      const checksResponse = await fetch(
+        `http://localhost:8000/purchases/${params.purchaseId}/accounting-checks`,
+        { credentials: "include" }
+      );
+
+      if (!checksResponse.ok) {
+        throw new Error(
+          "Verification saved, but unable to refresh accounting checks."
+        );
+      }
+
+      const updatedData = await checksResponse.json();
+
+      setAccountingStatus(updatedData.accounting_status);
+      setAccountingChecks(updatedData.checks);
+
+      const historyResponse = await fetch(
+        `http://localhost:8000/purchases/${params.purchaseId}/accounting-history`,
+        { credentials: "include" }
+      );
+
+      if (!historyResponse.ok) {
+        throw new Error(
+          "Verification saved, but unable to refresh accounting history."
+        );
+      }
+
+      const historyData = await historyResponse.json();
+
+      setAccountingHistory(
+        Array.isArray(historyData)
+          ? historyData
+          : Array.isArray(historyData.history)
+            ? historyData.history
+            : []
+      );
+
+      setSelectedAccountingCheck(null);
+      setAccountingReason("");
+
+    } catch (err) {
+      setAccountingSaveError(
+        err instanceof Error
+          ? err.message
+          : "Unable to save accounting verification."
+      );
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
 
 async function handleSaveReview() {
   if (!purchase || savingReview) return;
@@ -658,6 +954,194 @@ async function handleSaveReview() {
 
                 </div>
               </div>
+        
+              {/* Accounting Verification */}
+              {purchase.status === "purchased" && (
+                <section className="mt-6 rounded-xl border border-gray-800 p-6">
+                  <h2 className="text-xl font-semibold">
+                    Accounting Verification
+                  </h2>
+
+                  {accountingLoading && (
+                    <p className="mt-4 text-gray-400">
+                      Loading accounting checks...
+                    </p>
+                  )}
+
+                  {accountingError && (
+                    <p role="alert" className="mt-4 text-red-400">
+                      {accountingError}
+                    </p>
+                  )}
+
+                  {!accountingLoading && !accountingError && (
+                    <>
+                      <p className="mt-4 text-sm text-gray-400">
+                        Overall Status
+                      </p>
+                      <p className="mt-1 text-lg font-semibold capitalize">
+                        {accountingStatus.replaceAll("_", " ")}
+                      </p>
+                      <div className="mt-5 space-y-3">
+                        {accountingChecks.map((check) => (
+                        <button
+                          key={check.check_type}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAccountingCheck(check.check_type);
+                            setSelectedAccountingStatus(check.status);
+                            setAccountingReason("");
+                            setAccountingSaveError("");
+                          }}
+                          className={`flex w-full items-center justify-between rounded-lg border p-4 text-left transition-colors ${
+                            selectedAccountingCheck === check.check_type
+                              ? "border-blue-500 bg-blue-500/10"
+                              : "border-gray-800 hover:border-gray-600"
+                          }`}
+                        >
+                            <span className="capitalize">
+                              {check.check_type.replaceAll("_", " ")}
+                            </span>
+
+                            <span className="capitalize">
+                              {check.status}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {selectedAccountingCheck && (
+                        <div className="mt-6 border-t border-gray-800 pt-5">
+                          <label
+                            htmlFor="accounting-status"
+                            className="mb-2 block text-sm text-gray-400"
+                          >
+                            Change {selectedAccountingCheck.replaceAll("_", " ")} Status
+                          </label>
+
+                          <select
+                            id="accounting-status"
+                            value={selectedAccountingStatus}
+                            onChange={(e) =>
+                              setSelectedAccountingStatus(
+                                e.target.value as AccountingCheck["status"]
+                              )
+                            }
+                            className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white"
+                          >
+                            <option value="pending">Pending</option>
+                            <option value="passed">Passed</option>
+                            <option value="failed">Failed</option>
+                          </select>
+
+                          <div className="mt-4">
+                            <label
+                              htmlFor="accounting-reason"
+                              className="mb-2 block text-sm text-gray-400"
+                            >
+                              Reason for Verification Change
+                            </label>
+
+                            <textarea
+                              id="accounting-reason"
+                              value={accountingReason}
+                              onChange={(e) => setAccountingReason(e.target.value)}
+                              placeholder="Explain why this accounting check is changing..."
+                              rows={3}
+                              maxLength={5000}
+                              className="w-full rounded-lg border border-gray-700 bg-transparent p-3 text-sm text-white outline-none focus:border-blue-500"
+                            />
+                          </div>
+                            {accountingSaveError && (
+                              <p role="alert" className="mt-3 text-sm text-red-400">
+                                {accountingSaveError}
+                              </p>
+                            )}
+                            <div className="mt-4 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={handleSaveAccounting}
+                                disabled={
+                                  savingAccounting ||
+                                  !accountingReason.trim() ||
+                                  selectedAccountingStatus ===
+                                    accountingChecks.find(
+                                      (check) => check.check_type === selectedAccountingCheck
+                                    )?.status
+                                }
+                                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {savingAccounting ? "Saving..." : "Save Verification"}
+                              </button>
+                            </div>
+                        </div>
+                      )}
+
+
+                    </>
+                  )}
+                </section>
+              )}
+
+                {/* Accounting Audit History */}
+                {purchase.status === "purchased" && (
+                  <section className="mt-6 rounded-xl border border-gray-800 p-6">
+                    <h2 className="text-xl font-semibold">
+                      Accounting History
+                    </h2>
+
+                    {accountingHistoryLoading && (
+                      <p className="mt-4 text-gray-400">
+                        Loading accounting history...
+                      </p>
+                    )}
+
+                    {accountingHistoryError && (
+                      <p role="alert" className="mt-4 text-red-400">
+                        {accountingHistoryError}
+                      </p>
+                    )}
+
+                    {!accountingHistoryLoading && !accountingHistoryError && (
+                      <div className="mt-5 space-y-4">
+                        {accountingHistory.length === 0 ? (
+                          <p className="text-gray-400">
+                            No accounting verification changes yet.
+                          </p>
+                        ) : (
+                          accountingHistory.map((entry) => (
+                            <div
+                              key={entry.id}
+                              className="rounded-lg border border-gray-800 p-4"
+                            >
+                              <p className="font-medium capitalize">
+                                {entry.check_type.replaceAll("_", " ")}:
+                                {" "}
+                                {entry.old_status.replaceAll("_", " ")}
+                                {" → "}
+                                {entry.new_status.replaceAll("_", " ")}
+                              </p>
+
+                              <p className="mt-2 text-sm text-gray-400">
+                                Changed by {entry.changed_by_name}
+                                {" • "}
+                                {new Date(entry.created_at).toLocaleString()}
+                              </p>
+
+                              <p className="mt-3 whitespace-pre-wrap text-sm">
+                                {entry.reason}
+                              </p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+
+
+              
           <section className="mt-8 rounded-xl border border-gray-800 p-6">
             <h2 className="text-xl font-semibold">
               Purchase Information

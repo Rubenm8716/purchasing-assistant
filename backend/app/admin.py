@@ -11,8 +11,12 @@ from fastapi import HTTPException
 from app.database import get_connection
 from psycopg.errors import UniqueViolation
 
+from psycopg.rows import dict_row
+
 import secrets
 import string
+
+from uuid import UUID
 
 
 router = APIRouter(
@@ -145,7 +149,8 @@ def list_users(
         for row in rows
     ]
 
-from uuid import UUID
+
+
 @router.get("/users/{user_id}")
 def get_user_profile(
     user_id: UUID,
@@ -313,4 +318,110 @@ def reactivate_user(
         "message": "Employee reactivated successfully",
         "user_id": str(employee_id),
         "is_active": True
+    }
+
+
+@router.get("/users/{user_id}/purchases")
+def get_employee_purchases(
+    user_id: UUID,
+    current_user: dict = Depends(require_role("admin", "manager"))
+):
+    with get_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+
+            # Verify the employee exists
+            cur.execute(
+                """
+                SELECT id
+                FROM users
+                WHERE id = %s
+                """,
+                (user_id,)
+            )
+
+            if cur.fetchone() is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Employee not found"
+                )
+
+            # Retrieve purchases belonging to this employee
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    job_name,
+                    item_description,
+                    amount,
+                    status,
+                    review_status,
+                    after_the_fact,
+                    created_at
+                FROM purchase_requests
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+                """,
+                (user_id,)
+            )
+
+            purchases = cur.fetchall()
+
+    return purchases
+
+
+
+@router.get("/users/{user_id}/statistics")
+def get_employee_statistics(
+    user_id: UUID,
+    current_user: dict = Depends(require_role("admin", "manager"))
+):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # First, verify that the employee exists.
+            cur.execute(
+                """
+                SELECT id
+                FROM users
+                WHERE id = %s
+                """,
+                (user_id,)
+            )
+
+            if cur.fetchone() is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Employee not found"
+                )
+
+            # Calculate spending and investigation statistics.
+            cur.execute(
+                """
+                SELECT
+                    COUNT(id) FILTER (
+                        WHERE status = 'purchased'
+                    ) AS total_purchases,
+
+                    COALESCE(
+                        SUM(amount) FILTER (
+                            WHERE status = 'purchased'
+                        ),
+                        0
+                    ) AS total_spent,
+
+                    COUNT(id) FILTER (
+                        WHERE review_status IN ('pending', 'in_progress')
+                    ) AS active_investigations
+
+                FROM purchase_requests
+                WHERE user_id = %s
+                """,
+                (user_id,)
+            )
+
+            stats = cur.fetchone()
+
+    return {
+        "total_purchases": stats[0],
+        "total_spent": float(stats[1]),
+        "active_investigations": stats[2]
     }
