@@ -160,7 +160,7 @@ function EvidencePreview({
 
 
 //export default function PurchaseDetailsPage() {
-function PurchaseDetailsContent() {    
+function PurchaseDetailsContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const params = useParams<{ purchaseId: string }>();
@@ -172,7 +172,7 @@ function PurchaseDetailsContent() {
   const [selectedReviewStatus, setSelectedReviewStatus] = useState("");
   const [reviewReason, setReviewReason] = useState("");
   const [savingReview, setSavingReview] = useState(false);
-  const [reviewSaveError, setReviewSaveError] = useState("");  
+  const [reviewSaveError, setReviewSaveError] = useState("");
 
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [evidenceLoading, setEvidenceLoading] = useState(true);
@@ -406,7 +406,7 @@ useEffect(() => {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, user, canView, params.purchaseId]);  
+  }, [authLoading, user, canView, params.purchaseId]);
 
 /*
   async function fetchAccountingChecks(purchaseId: string) {
@@ -536,7 +536,6 @@ useEffect(() => {
           `http://localhost:8000/purchases/${params.purchaseId}/accounting-history`,
           { credentials: "include" }
         );
-
         if (!response.ok) {
           throw new Error(
             `Unable to load accounting history (${response.status})`
@@ -954,7 +953,7 @@ async function handleSaveReview() {
 
                 </div>
               </div>
-        
+
               {/* Accounting Verification */}
               {purchase.status === "purchased" && (
                 <section className="mt-6 rounded-xl border border-gray-800 p-6">
@@ -1138,10 +1137,6 @@ async function handleSaveReview() {
                     )}
                   </section>
                 )}
-
-
-
-              
           <section className="mt-8 rounded-xl border border-gray-800 p-6">
             <h2 className="text-xl font-semibold">
               Purchase Information
@@ -1384,7 +1379,6 @@ async function handleSaveReview() {
               </div>
             )}
           </section>
-
 
           {/* Purchase Flags */}
           {purchase.needs_review && (

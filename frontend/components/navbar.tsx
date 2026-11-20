@@ -16,6 +16,7 @@ export default function Navbar() {
 
   const links = [
     { href: "/", label: "Chat" },
+    { href: "/chat-history", label: "Chat History" },
     { href: "/purchases/new", label: "New Purchase" },
     { href: "/purchases", label: "Purchase History" },
 

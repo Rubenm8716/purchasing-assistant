@@ -42,13 +42,121 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [historyLoading, setHistoryLoading] = useState(true);
+
+  const [conversationId, setConversationId] = useState<string | null>(null);
+
+const [conversationMode, setConversationMode] = useState< "general" | "purchase" > ("general");
+
+  useEffect(() => {
+  if (authLoading || !user || user.must_change_password) return;
+
+  //const savedId = sessionStorage.getItem("activeConversationId");
+  const savedId = sessionStorage.getItem(`activeConversationId:${user.id}`);
+
+
+
+  if (savedId) {
+    setConversationId(savedId);
+  } else {
+    setHistoryLoading(false);
+  }
+  }, [authLoading, user]);
+
+  useEffect(() => {
+    if (!conversationId || authLoading || !user || user.must_change_password) {
+      return;
+    }
+
+    if (skipNextRestore.current) {
+      skipNextRestore.current = false;
+      return;
+    }
+
+    let cancelled = false;
+
+
+    async function loadConversation() {
+      setHistoryLoading(true);
+      try {
+        const response = await fetch(
+          `http://localhost:8000/conversations/${conversationId}`,
+          {
+            credentials: "include",
+          }
+        );
+
+
+        if (response.status === 404) {
+          throw new Error("CONVERSATION_NOT_FOUND");
+        }
+        if (!response.ok) {
+          throw new Error("Failed to load conversation");
+        }
+
+        const data = await response.json();
+
+        if (cancelled) return;
+
+        setConversationMode(data.mode);
+
+        const restoredMessages: Message[] = data.messages.map(
+          (
+            message: {
+              role: "user" | "assistant";
+              content: string;
+            },
+            index: number
+          ) => ({
+            id: index,
+            role: message.role,
+            content: message.content,
+          })
+        );
+
+        setMessages(restoredMessages);
+        nextId.current = restoredMessages.length;
+
+      } catch (error) {
+          if (!cancelled) {
+            if (
+              error instanceof Error &&
+              error.message === "CONVERSATION_NOT_FOUND"
+            ) {
+              sessionStorage.removeItem(`activeConversationId:${user!.id}`);
+              setConversationId(null);
+              setMessages([]);
+              nextId.current = 0;
+            } else {
+              console.error("Failed to restore conversation:", error);
+            }
+          }
+        } finally {
+            if (!cancelled) {
+              setHistoryLoading(false);
+            }
+          }
+    }
+
+    loadConversation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, authLoading, user]);
+
+
+
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const nextId = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const skipNextRestore = useRef(false);
+
   useEffect(() => {
+    if (messages.length === 0) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
@@ -68,7 +176,8 @@ function removeAttachment(index: number) {
     const text = input.trim();
 
     //if (!text || loading) return;
-    if ((!text && attachments.length === 0) || loading) return;
+    //if ((!text && attachments.length === 0) || loading) return;
+    if ((!text && attachments.length === 0) || loading || historyLoading) return;
 
 
     const selectedFiles = [...attachments];
@@ -98,17 +207,9 @@ function removeAttachment(index: number) {
     setAttachments([]);
     setLoading(true);
 
-
-
-
-
-
-
-
-
-
-
     try {
+
+      let activeConversationId = conversationId;
 
       // const response = await fetch("http://127.0.0.1:8000/chat", {
       //  method: "POST",
@@ -129,10 +230,80 @@ function removeAttachment(index: number) {
       //    }),
       //  });
 
+          // Create a conversation when sending the first message
+          if (!conversationId && text) {
+            const conversationResponse = await fetch(
+              "http://localhost:8000/conversations",
+              {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  mode: conversationMode,
+                  message: text,
+                }),
+              }
+            );
+
+            if (!conversationResponse.ok) {
+              throw new Error("Failed to create conversation");
+            }
+
+            const conversationData = await conversationResponse.json();
+
+            const newConversationId: string = conversationData.conversation_id;
+
+            activeConversationId = newConversationId;
+
+            skipNextRestore.current = true;
+
+            setConversationId(newConversationId);
+
+            /*sessionStorage.setItem(
+              "activeConversationId",
+              newConversationId
+            );*/
+            sessionStorage.setItem(`activeConversationId:${user!.id}`, newConversationId);
+
+
+            //setConversationId(conversationData.conversation_id);
+          }
+          // Save subsequent user messages to the existing conversation
+          else if (activeConversationId && text) {
+            const messageResponse = await fetch(
+              //`http://localhost:8000/conversations/${conversationId}/messages`,
+              `http://localhost:8000/conversations/${activeConversationId}/messages`,
+              {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  message: text,
+                }),
+              }
+            );
+
+            if (!messageResponse.ok) {
+              throw new Error("Failed to save message");
+            }
+          }
 
 
         // Create the multipart request body
         const formData = new FormData();
+
+        if (!activeConversationId) {
+          throw new Error("Conversation ID is missing");
+        }
+
+        formData.append("conversation_id", activeConversationId);
+
+
+
 
         // Prepare conversation history
         const conversation = [...messages, userMessage].map((message) => ({
@@ -165,16 +336,6 @@ function removeAttachment(index: number) {
         });
 
 
-
-
-
-
-
-
-
-
-
-
       // if (!response.ok) {
       //  throw new Error(`Server returned ${response.status}`);
       //}
@@ -188,13 +349,6 @@ function removeAttachment(index: number) {
             : `Server returned ${response.status}`
         );
       }
-
-
-
-
-
-
-
 
       const data = await response.json();
 
@@ -225,6 +379,20 @@ function removeAttachment(index: number) {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleNewChat() {
+    if (loading || historyLoading || !user) return;
+
+    sessionStorage.removeItem(`activeConversationId:${user.id}`);
+
+    setConversationId(null);
+    setConversationMode("general");
+    setMessages([]);
+    setInput("");
+    setAttachments([]);
+
+    nextId.current = 0;
   }
 
   async function handleLogout() {
@@ -258,6 +426,14 @@ function removeAttachment(index: number) {
             </p>
             </div>
             <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={handleNewChat}
+              disabled={loading || historyLoading}
+              className="rounded-full bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              New Chat
+            </button>
               <span className="text-sm text-zinc-400">
                 {user.name}
               </span>
@@ -274,14 +450,47 @@ function removeAttachment(index: number) {
 
           <section className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden px-4">
             <div className="flex-1 space-y-5 overflow-y-auto py-8">
-              {messages.length === 0 && (
+                {!historyLoading && messages.length === 0 && (
+                  <div className="flex justify-center">
+                    <div className="flex rounded-xl border border-zinc-700 bg-zinc-900 p-1">
+                      <button
+                        type="button"
+                        onClick={() => setConversationMode("general")}
+                        className={`rounded-lg px-5 py-2 text-sm font-medium transition-colors ${
+                          conversationMode === "general"
+                            ? "bg-zinc-700 text-white"
+                            : "text-zinc-400 hover:text-white"
+                        }`}
+                      >
+                        General Question
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setConversationMode("purchase")}
+                        className={`rounded-lg px-5 py-2 text-sm font-medium transition-colors ${
+                          conversationMode === "purchase"
+                            ? "bg-zinc-700 text-white"
+                            : "text-zinc-400 hover:text-white"
+                        }`}
+                      >
+                        Purchase Request
+                      </button>
+
+                    </div>
+                  </div>
+                )}
+              {!historyLoading && messages.length === 0 && (
                 <div className="flex h-full flex-col items-center justify-center text-center">
                   <h2 className="mb-3 text-3xl font-semibold">
-                    What would you like to purchase?
+                    {conversationMode === "general"
+                      ? "How can I help you?"
+                      : "What would you like to purchase?"}
                   </h2>
                   <p className="text-zinc-400">
-                    Ask about company purchases, spending policies,
-                    and approval requirements.
+                    {conversationMode === "general"
+                      ? "Ask questions about company policies, procedures, or anything you need help with."
+                      : "Tell me what you need to purchase, and I'll guide you through the process."}
                   </p>
                 </div>
               )}
@@ -398,7 +607,11 @@ function removeAttachment(index: number) {
 
                 <button
                   type="submit"
-                  disabled={loading || (!input.trim() && attachments.length === 0)}
+                  disabled={
+                    loading ||
+                    historyLoading ||
+                    (!input.trim() && attachments.length === 0)
+                  }
                   className="rounded-lg bg-white px-5 py-3 font-medium text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Send

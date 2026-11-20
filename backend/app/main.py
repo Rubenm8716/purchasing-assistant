@@ -20,6 +20,11 @@ from app.permissions import require_password_changed
 
 from app.purchases import router as purchases_router
 
+from app.conversations import router as conversations_router
+
+from app.conversations import save_assistant_message
+from uuid import UUID
+
 
 
 app = FastAPI(title="Purchasing Assistant API")
@@ -28,6 +33,8 @@ app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(purchases_router)
 
+app.include_router(conversations_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -35,7 +42,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["Content-Type"],
 )
-
 
 @app.get("/health")
 def health_check():
@@ -129,6 +135,7 @@ async def validate_receipt(file: UploadFile):
 @app.post("/chat")
 async def chat(
     messages: str = Form(...),
+    conversation_id: UUID = Form(...),
     receipts: list[UploadFile] | None = File(None),
     #current_user: dict = Depends(get_current_user)
     current_user: dict = Depends(require_password_changed)
@@ -136,8 +143,9 @@ async def chat(
     # Convert the JSON string into validated messages
     #request = ChatRequest.model_validate_json(messages)
     request = ChatRequest.model_validate_json(
-    '{"messages":' + messages + '}'
-)
+        '{"messages":' + messages + '}'
+    )
+
     messages = request.messages
     if not messages:
         return{"response": "Please send a message."}
@@ -145,35 +153,39 @@ async def chat(
     latest_message = messages[-1].content
     previous_messages = messages[:-1]
 
-    # Receipt Verification
+    # Receipt verification
     if receipts:
-            for file in receipts:
-                await validate_receipt(file)
+        for file in receipts:
+            await validate_receipt(file)
 
-            filenames = [file.filename for file in receipts]
+        filenames = [file.filename for file in receipts]
 
-            return {
-                "response": (
-                    f"Validated {len(receipts)} file(s): "
-                    f"{', '.join(filenames)}"
-                )
-            }
-        #filenames = [file.filename for file in receipts]
-        #return {
-        #    "response": f"Received {len(receipts)} file(s): {', '.join(filenames)}"
-        #}
-    if not previous_messages:
         response = (
-            "I can help with that."
+            f"Validated {len(receipts)} file(s): "
+            f"{', '.join(filenames)}"
+        )
+
+    elif not previous_messages:
+        response = (
+            "I can help with that. "
             "What project is this purchase for?"
         )
-    else: 
+
+    else:
         response = (
             f"Thanks for the additional information: "
-            f"'{latest_message}'."
-            f"I now have {len(messages)} messages"
+            f"'{latest_message}'. "
+            f"I now have {len(messages)} messages "
             f"in our conversation"
         )
+
+    # Save the assistant's response to PostgreSQL
+    save_assistant_message(
+        conversation_id,
+        response,
+        current_user["id"]
+    )
+
     return {"response": response}
 
 
